@@ -1,4 +1,9 @@
-# +
+
+# Ensure latest version of gradio installed to get dropdowns to work
+import os
+os.system("pip install gradio -U")
+
+
 import gradio as gr
 from datetime import datetime
 import pandas as pd
@@ -11,31 +16,20 @@ today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 # -
 
-# ## Gradio app - extract keywords
-
-# +
-
-block = gr.Blocks(css=".gradio-container {background-color: black}")
-
-with block:
-    
-    #default_colnames = np.array("text")
-    #in_colnames=default_colnames
-    
-    def extract_kwords(text, text_df, length_slider, in_colnames, diversity_slider, candidate_keywords):
+def extract_kwords(text, text_df, length_slider, in_colnames, diversity_slider, candidate_keywords):
              
-        if text_df == None:
+        if not text_df:
             in_colnames="text"
             in_colnames_list_first = in_colnames
 
             in_text_df = pd.DataFrame({in_colnames_list_first:[text]})
             
         else: 
-            in_text_df = pd.read_csv(text_df.name, delimiter = ",", low_memory=False, encoding='cp1252')
-            in_colnames_list_first = in_colnames.tolist()[0][0]
+            in_text_df = pd.read_csv(text_df[0].name, delimiter = ",", low_memory=False, encoding='cp1252')
+            in_colnames_list_first = in_colnames[0]
         
-        if candidate_keywords == None:
-            keywords_text = KeyBERT().extract_keywords(list(in_text_df[in_colnames_list_first]), stop_words='english', top_n=length_slider, 
+        if not candidate_keywords:
+            keywords_text = KeyBERT().extract_keywords(list(in_text_df[in_colnames_list_first].str.lower()), stop_words='english', top_n=length_slider, 
                                                    keyphrase_ngram_range=(1, 1), use_mmr=True, diversity=diversity_slider)
             
         # Do this if you have pre-assigned keywords
@@ -43,11 +37,16 @@ with block:
         
             candidates_list = pd.read_csv(candidate_keywords.name, delimiter = ",", low_memory=False, encoding='cp1252').iloc[:,0].tolist()
             candidates_list_lower = [x.lower() for x in candidates_list]
-            
-            #print(candidates_list)
+  
+            print(candidates_list_lower)
         
-            keywords_text = KeyBERT().extract_keywords(list(in_text_df[in_colnames_list_first]), stop_words='english', top_n=length_slider, 
+            keywords_text = KeyBERT().extract_keywords(list(in_text_df[in_colnames_list_first].str.lower()), stop_words='english', top_n=length_slider, 
                                                    keyphrase_ngram_range=(1, 1), use_mmr=True, diversity=diversity_slider, candidates=candidates_list_lower)
+
+
+        if not keywords_text:
+            return "No keywords found, original file returned", text_df[0].name
+
 
         if text_df == None:
             keywords_text_labels = [i[0] for i in keywords_text]
@@ -56,7 +55,7 @@ with block:
             keywords_scores_out = str(keywords_text_scores)
            
         else: 
-            #print(keywords_text_labels)
+            print(keywords_text)
             
             keywords_text_out = []
             keywords_scores_out = []
@@ -104,7 +103,57 @@ with block:
         output_df.to_csv(output_name, index = None)
         
         return output_text, output_name
-      
+
+def detect_file_type(filename):
+    """Detect the file type based on its extension."""
+    if (filename.endswith('.csv')) | (filename.endswith('.csv.gz')) | (filename.endswith('.zip')):
+        return 'csv'
+    elif filename.endswith('.xlsx'):
+        return 'xlsx'
+    elif filename.endswith('.parquet'):
+        return 'parquet'
+    else:
+        raise ValueError("Unsupported file type.")
+
+def read_file(filename):
+    """Read the file based on its detected type."""
+    file_type = detect_file_type(filename)
+    
+    if file_type == 'csv':
+        return pd.read_csv(filename, low_memory=False)
+    elif file_type == 'xlsx':
+        return pd.read_excel(filename)
+    elif file_type == 'parquet':
+        return pd.read_parquet(filename)
+
+def put_columns_in_df(in_file):
+    new_choices = []
+    concat_choices = []
+    
+    for file in in_file:
+        df = read_file(file.name)
+        #print(df.columns)
+        new_choices = list(df.columns)
+
+        concat_choices.extend(new_choices)
+        #concat_choices = list(set(concat_choices))
+        
+        print(concat_choices)
+        
+    return gr.Dropdown(choices=concat_choices)
+
+def dummy_function(in_colnames):
+    """
+    A dummy function that exists just so that dropdown updates work correctly.
+    """
+    return None
+
+# ## Gradio app - extract keywords
+
+block = gr.Blocks(theme = gr.themes.Base())
+
+with block:
+ 
     gr.Markdown(
     """
     # Extract keywords from text
@@ -115,12 +164,11 @@ with block:
         in_text = gr.Textbox(label="Copy and paste your open text here", lines = 5)
         
     with gr.Accordion("I have a file", open = False):
-        in_text_df = gr.File(label="Input text from file")
-        in_colnames = gr.Dataframe(label="Write the column name for the open text to keywords",
-                                   type="numpy", row_count=(1,"fixed"), col_count = (1,"fixed"),
-                               headers=["Open text column name"])#, "Address column name 2", "Address column name 3", "Address column name 4"])
-        
-    with gr.Accordion("I have my own list of keywords. Upload a csv file with one column only - column title 'keywords'", open = False):
+        in_text_df = gr.File(label="Input text from file", file_count="multiple")
+        in_colnames = gr.Dropdown(choices=["Choose a column"], multiselect = True, label="Select column to find keywords (first will be chosen if multiple selected).")
+
+
+    with gr.Accordion("I have my own list of keywords. Keywords will be taken from the leftmost column of the file.", open = False):
         candidate_keywords = gr.File(label="Input keywords from file (csv)")
         
     with gr.Row():
@@ -134,6 +182,10 @@ with block:
     with gr.Row():
         output_single_text = gr.Textbox(label="Output example (first example in dataset)")
         output_file = gr.File(label="Output file")
+
+    # Update column names dropdown when file uploaded
+    in_text_df.upload(fn=put_columns_in_df, inputs=[in_text_df], outputs=[in_colnames])    
+    in_colnames.change(dummy_function, in_colnames, None)
 
     keywords_btn.click(fn=extract_kwords, inputs=[in_text, in_text_df, length_slider, in_colnames, diversity_slider, candidate_keywords],
                     outputs=[output_single_text, output_file], api_name="keywords")
