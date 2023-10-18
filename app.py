@@ -124,7 +124,7 @@ with block:
         candidate_keywords = gr.File(label="Input keywords from file (csv)")
         
     with gr.Row():
-        length_slider = gr.Slider(minimum = 1, maximum = 50, value = 5, step = 1, label = "Maximum number of keywords")
+        length_slider = gr.Slider(minimum = 1, maximum = 100, value = 5, step = 1, label = "Maximum number of keywords")
         diversity_slider = gr.Slider(minimum = 0, maximum = 1, value = 0, step = 0.1, label = "Keyword diversity: 0 - keywords are based purely on score, 1 - keywords are ranked by diversity and less on score")
 
     with gr.Row():
@@ -136,7 +136,7 @@ with block:
         output_file = gr.File(label="Output file")
 
     keywords_btn.click(fn=extract_kwords, inputs=[in_text, in_text_df, length_slider, in_colnames, diversity_slider, candidate_keywords],
-                    outputs=[output_single_text, output_file], api_name="keywords_single_text")
+                    outputs=[output_single_text, output_file], api_name="keywords")
 
-block.queue(concurrency_count=10).launch()
+block.queue(concurrency_count=1).launch()
 
