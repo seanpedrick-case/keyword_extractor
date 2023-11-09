@@ -1,7 +1,7 @@
 
-# Ensure latest version of gradio installed to get dropdowns to work
+# Install specific gradio version to get dropdowns to work
 import os
-os.system("pip install gradio -U")
+os.system("pip install gradio==3.50.0")
 
 
 import gradio as gr
